@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ArrowLeft, Edit3, ShoppingCart } from 'lucide-react';
+import { ArrowLeft, Edit3, ShoppingCart, Check } from 'lucide-react';
 import { ListItem, WeekList } from '../types';
 import { ItemStatusBadge } from '../components/StatusBadge';
 import { Avatar } from '../components/Avatar';
@@ -11,20 +11,44 @@ interface Props {
   unitPrice?: number | null;
   isAdmin: boolean;
   onBack: () => void;
-  onMarkPurchased: () => Promise<void>;
+  onMarkPurchased?: () => Promise<void>;
   onRemove: () => Promise<void>;
   onUpdateNotes: (n: string) => Promise<void>;
 }
 
-export function ItemDetail({ item, list, unitPrice, isAdmin, onBack, onRemove, onUpdateNotes }: Props) {
+export function ItemDetail({
+                             item,
+                             list,
+                             unitPrice,
+                             isAdmin,
+                             onBack,
+                             onMarkPurchased,
+                             onRemove,
+                             onUpdateNotes,
+                           }: Props) {
   const [editNotes, setEditNotes] = useState(false);
   const [notes, setNotes] = useState(item.notes || '');
   const [saving, setSaving] = useState(false);
   const [confirming, setConfirming] = useState(false);
+  const [removing, setRemoving] = useState(false);
+
+  const handleRemove = async () => {
+    if (!confirming) {
+      setConfirming(true);
+      return;
+    }
+    setRemoving(true);
+    try {
+      await onRemove();
+    } catch {
+      setConfirming(false);
+    } finally {
+      setRemoving(false);
+    }
+  };
 
   return (
       <div className="min-h-screen bg-[#F9F8F6] pb-safe">
-
         {/* Header */}
         <div className="bg-white border-b border-[#EBEBEB] px-5 pt-safe">
           <p className="text-center text-sm font-semibold text-[#2D7A4F] pt-3">Home Market</p>
@@ -41,10 +65,8 @@ export function ItemDetail({ item, list, unitPrice, isAdmin, onBack, onRemove, o
         </div>
 
         <div className="px-4 py-4 space-y-3">
-
           {/* Card principal */}
-          <div className="bg-white rounded-2xl border border-[#EBEBEB] overflow-hidden">
-
+          <div className="bg-white rounded-2xl border border-[#EBEBEB] overflow-hidden shadow-sm">
             {/* Foto inteira sem cortes */}
             <div className="w-full bg-[#FAFAFA] flex items-center justify-center p-4 border-b border-[#EBEBEB]">
               {item.photoURL ? (
@@ -61,7 +83,6 @@ export function ItemDetail({ item, list, unitPrice, isAdmin, onBack, onRemove, o
             </div>
 
             <div className="divide-y divide-[#EBEBEB]">
-
               {/* Nome e descrição */}
               <div className="px-4 py-3">
                 <div className="flex items-start gap-2">
@@ -93,7 +114,10 @@ export function ItemDetail({ item, list, unitPrice, isAdmin, onBack, onRemove, o
                   />
                       <div className="flex gap-2 mt-2">
                         <button
-                            onClick={() => { setEditNotes(false); setNotes(item.notes || ''); }}
+                            onClick={() => {
+                              setEditNotes(false);
+                              setNotes(item.notes || '');
+                            }}
                             className="flex-1 py-2 rounded-xl border border-[#EBEBEB] text-sm font-medium text-[#6B6B6B]"
                         >
                           Cancelar
@@ -101,8 +125,12 @@ export function ItemDetail({ item, list, unitPrice, isAdmin, onBack, onRemove, o
                         <button
                             onClick={async () => {
                               setSaving(true);
-                              try { await onUpdateNotes(notes); setEditNotes(false); }
-                              finally { setSaving(false); }
+                              try {
+                                await onUpdateNotes(notes);
+                                setEditNotes(false);
+                              } finally {
+                                setSaving(false);
+                              }
                             }}
                             disabled={saving}
                             className="flex-1 py-2 rounded-xl text-white text-sm font-semibold disabled:opacity-60"
@@ -169,14 +197,39 @@ export function ItemDetail({ item, list, unitPrice, isAdmin, onBack, onRemove, o
             </div>
           </div>
 
+          {/* Botão de Ação: Marcar como Comprado (se fornecido) */}
+          {onMarkPurchased && item.status !== 'purchased' && list.status !== 'closed' && (
+              <button
+                  onClick={onMarkPurchased}
+                  className="w-full py-3.5 rounded-xl text-white text-sm font-semibold flex items-center justify-center gap-2 shadow-sm"
+                  style={{ backgroundColor: '#2D7A4F' }}
+              >
+                <Check size={16} />
+                Marcar como Comprado
+              </button>
+          )}
+
           {/* Remover da lista */}
           {list.status !== 'closed' && (
-              <button
-                  onClick={async () => { if (!confirming) { setConfirming(true); return; } await onRemove(); }}
-                  className={`w-full py-3 rounded-xl text-sm font-semibold transition-all ${confirming ? 'bg-[#E05A3A] text-white' : 'text-[#E05A3A]'}`}
-              >
-                {confirming ? 'Confirmar remoção' : 'Remover da lista'}
-              </button>
+              <div className="flex gap-2">
+                {confirming && (
+                    <button
+                        onClick={() => setConfirming(false)}
+                        className="flex-1 py-3 rounded-xl text-sm font-semibold border border-[#EBEBEB] bg-white text-[#6B6B6B]"
+                    >
+                      Cancelar
+                    </button>
+                )}
+                <button
+                    disabled={removing}
+                    onClick={handleRemove}
+                    className={`flex-1 py-3 rounded-xl text-sm font-semibold transition-all ${
+                        confirming ? 'bg-[#E05A3A] text-white' : 'text-[#E05A3A] bg-transparent hover:bg-[#FDEEE9]'
+                    }`}
+                >
+                  {removing ? 'Removendo...' : confirming ? 'Confirmar remoção' : 'Remover da lista'}
+                </button>
+              </div>
           )}
         </div>
       </div>

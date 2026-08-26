@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { collection, query, where, onSnapshot, addDoc, updateDoc, doc, getDocs } from 'firebase/firestore';
+import { collection, query, where, onSnapshot, addDoc, updateDoc, doc, getDocs, getDoc } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { db, storage } from '../lib/firebase';
 import { Purchase, PurchaseItem } from '../types';
@@ -11,12 +11,16 @@ export function useHistory(householdId: string | null) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (!householdId) { setPurchases([]); setLoading(false); return; }
+    if (!householdId) {
+      setPurchases([]);
+      setLoading(false);
+      return;
+    }
     const q = query(collection(db, 'purchases'), where('householdId', '==', householdId));
     const unsub = onSnapshot(q, snap => {
       const sortedPurchases = snap.docs
-        .map(d => ({ id: d.id, ...d.data(), createdAt: d.data().createdAt?.toDate() || new Date() }))
-        .sort((a, b) => (b.createdAt?.getTime() || 0) - (a.createdAt?.getTime() || 0)) as Purchase[];
+          .map(d => ({ id: d.id, ...d.data(), createdAt: d.data().createdAt?.toDate() || new Date() }))
+          .sort((a, b) => (b.createdAt?.getTime() || 0) - (a.createdAt?.getTime() || 0)) as Purchase[];
       setPurchases(sortedPurchases);
       setLoading(false);
     }, (err) => {
@@ -27,15 +31,22 @@ export function useHistory(householdId: string | null) {
   }, [householdId]);
 
   const fetchPurchaseItems = async (purchaseId: string) => {
-    if (purchaseItems[purchaseId]) return;
     const snap = await getDocs(query(collection(db, 'purchaseItems'), where('purchaseId', '==', purchaseId)));
-    setPurchaseItems(prev => ({ ...prev, [purchaseId]: snap.docs.map(d => ({ id: d.id, ...d.data() })) as PurchaseItem[] }));
+    setPurchaseItems(prev => ({
+      ...prev,
+      [purchaseId]: snap.docs.map(d => ({ id: d.id, ...d.data() })) as PurchaseItem[]
+    }));
   };
 
   const createPurchaseForList = async (listId: string, weekLabel: string): Promise<string> => {
     const r = await addDoc(collection(db, 'purchases'), {
-      listId, householdId, weekLabel, total: 0,
-      receiptUrl: null, receiptProcessed: false, createdAt: new Date()
+      listId,
+      householdId,
+      weekLabel,
+      total: 0,
+      receiptUrl: null,
+      receiptProcessed: false,
+      createdAt: new Date()
     });
     return r.id;
   };
@@ -44,32 +55,22 @@ export function useHistory(householdId: string | null) {
     const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 0);
     const items: Omit<PurchaseItem, 'id'>[] = [];
 
-    // Regex para capturar linha com preço no final
-    // Exemplos: "CESAR DRY FLT MIGN VEG T 9.79" ou "HEB WHOLE CLOVES F 3.58"
-    const priceRegex = /^(.+?)\s+[A-Z\*]?\s*([\d]+\.[\d]{2})\s*(?:HQ|FW|H|Q|T|F)?$/;
-    
-    // Palavras que indicam fim dos itens
-    const stopWords = ['subtotal', 'total', 'tax', 'visa', 'cash', 'change', 'items', 'fsa', 'sale', 'savings'];
+    const priceRegex = /^(.+?)\s+\$?(\d+[\.,]\d{2})\s*[A-Z\*]*$/i;
+    const stopWords = ['subtotal', 'total', 'tax', 'visa', 'mastercard', 'cash', 'change', 'items', 'fsa', 'sale', 'savings', 'balance'];
 
     for (const line of lines) {
       const lower = line.toLowerCase();
-      
-      // Para quando chega nas linhas de totais
       if (stopWords.some(w => lower.includes(w))) break;
 
       const match = line.match(priceRegex);
       if (!match) continue;
 
       let name = match[1].trim();
-      const price = parseFloat(match[2]);
+      const price = parseFloat(match[2].replace(',', '.'));
 
       if (!name || isNaN(price) || price <= 0 || price > 500) continue;
 
-      // Remove número do início (ex: "1 CESAR..." ou "21 HEB...")
-      name = name.replace(/^\d+\s+/, '');
-
-      // Remove flags de tipo (T, F, FW, HQ, etc) do final do nome
-      name = name.replace(/\s+[TFHQ]{1,2}$/, '').trim();
+      name = name.replace(/^\d+\s+/, '').replace(/\s+[TFHQ]{1,2}$/i, '').trim();
 
       if (name.length < 2) continue;
 
@@ -86,40 +87,35 @@ export function useHistory(householdId: string | null) {
   };
 
   const uploadReceipt = async (purchaseId: string, file: File): Promise<void> => {
-    // 1. Faz upload da imagem
     const sRef = ref(storage, `receipts/${purchaseId}/${file.name}`);
     await uploadBytes(sRef, file);
     const url = await getDownloadURL(sRef);
 
-    // 2. Roda OCR com Tesseract
-    const { data: { text } } = await Tesseract.recognize(file, 'eng', {
-      logger: m => console.log(m),
-    });
-
+    const { data: { text } } = await Tesseract.recognize(file, 'eng');
     console.log('OCR Text:', text);
 
-    // 3. Parseia o texto para extrair itens
     let extractedItems = parseReceiptText(text);
 
-    // 4. Se não extraiu nada, usa fallback
     if (extractedItems.length === 0) {
-      extractedItems = [{ purchaseId, name: 'Receipt uploaded — items not recognized', quantity: 1, unitPrice: 0, totalPrice: 0 }];
+      extractedItems = [{
+        purchaseId,
+        name: 'Item não reconhecido (Clique no lápis para editar)',
+        quantity: 1,
+        unitPrice: 0,
+        totalPrice: 0
+      }];
     }
 
-    // 5. Adiciona purchaseId nos itens
     const itemsWithId = extractedItems.map(i => ({ ...i, purchaseId }));
 
-    // 6. Salva no Firestore
     const ids: string[] = [];
     for (const item of itemsWithId) {
       const r = await addDoc(collection(db, 'purchaseItems'), item);
       ids.push(r.id);
     }
 
-    // 7. Calcula total
     const total = itemsWithId.reduce((s, i) => s + i.totalPrice, 0);
 
-    // 8. Atualiza o purchase
     await updateDoc(doc(db, 'purchases', purchaseId), {
       receiptUrl: url,
       receiptProcessed: true,
@@ -132,5 +128,43 @@ export function useHistory(householdId: string | null) {
     }));
   };
 
-  return { purchases, purchaseItems, loading, fetchPurchaseItems, createPurchaseForList, uploadReceipt };
+  const updateItemPrice = async (purchaseId: string, itemId: string, newUnitPrice: number, newName?: string) => {
+    const itemRef = doc(db, 'purchaseItems', itemId);
+    const itemSnap = await getDoc(itemRef);
+
+    if (!itemSnap.exists()) return;
+
+    const currentData = itemSnap.data();
+    const qty = currentData.quantity || 1;
+    const newTotalPrice = parseFloat((newUnitPrice * qty).toFixed(2));
+
+    await updateDoc(itemRef, {
+      unitPrice: newUnitPrice,
+      totalPrice: newTotalPrice,
+      ...(newName ? { name: newName.trim() } : {})
+    });
+
+    const snap = await getDocs(query(collection(db, 'purchaseItems'), where('purchaseId', '==', purchaseId)));
+    const updatedList = snap.docs.map(d => ({ id: d.id, ...d.data() })) as PurchaseItem[];
+    const newTotal = updatedList.reduce((sum, item) => sum + (item.totalPrice || 0), 0);
+
+    await updateDoc(doc(db, 'purchases', purchaseId), {
+      total: parseFloat(newTotal.toFixed(2))
+    });
+
+    setPurchaseItems(prev => ({
+      ...prev,
+      [purchaseId]: updatedList
+    }));
+  };
+
+  return {
+    purchases,
+    purchaseItems,
+    loading,
+    fetchPurchaseItems,
+    createPurchaseForList,
+    uploadReceipt,
+    updateItemPrice
+  };
 }
