@@ -55,22 +55,30 @@ export function useHistory(householdId: string | null) {
     const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 0);
     const items: Omit<PurchaseItem, 'id'>[] = [];
 
-    const priceRegex = /^(.+?)\s+\$?(\d+[\.,]\d{2})\s*[A-Z\*]*$/i;
-    const stopWords = ['subtotal', 'total', 'tax', 'visa', 'mastercard', 'cash', 'change', 'items', 'fsa', 'sale', 'savings', 'balance'];
+    // Regex adaptado para cupons do H-E-B e supermercados nos EUA:
+    // Aceita o formato: [num_item opcional] + [nome do produto] + [preço ex: 3.98] + [flags de tax opcionais ex: F, TF, FW, T, HQ, Q]
+    const hebItemRegex = /^(?:\d+\s+)?(.+?)\s+(\d+\.\d{2})(?:\s+[A-Z]{1,2})?$/i;
+    const strictStopWords = ['subtotal', 'total sale', 'tax', 'visa', 'mastercard', 'cash', 'change', 'items purchased', 'account #'];
 
     for (const line of lines) {
       const lower = line.toLowerCase();
-      if (stopWords.some(w => lower.includes(w))) break;
 
-      const match = line.match(priceRegex);
+      // Para apenas nas linhas de subtotal/total final
+      if (strictStopWords.some(w => lower.includes(w))) break;
+
+      // Ignora linhas intermediárias de peso/quantidade (ex: "0.68 Lbs @ 0.97 FW")
+      if (lower.includes('lbs @') || lower.includes('ea. @')) continue;
+
+      const match = line.match(hebItemRegex);
       if (!match) continue;
 
       let name = match[1].trim();
-      const price = parseFloat(match[2].replace(',', '.'));
+      const price = parseFloat(match[2]);
 
       if (!name || isNaN(price) || price <= 0 || price > 500) continue;
 
-      name = name.replace(/^\d+\s+/, '').replace(/\s+[TFHQ]{1,2}$/i, '').trim();
+      // Remove números residuais no início do nome se houver
+      name = name.replace(/^\d+\s+/, '').trim();
 
       if (name.length < 2) continue;
 
@@ -96,10 +104,11 @@ export function useHistory(householdId: string | null) {
 
     let extractedItems = parseReceiptText(text);
 
+    // Só adiciona o aviso se ABSOLUTAMENTE NENHUM item for lido
     if (extractedItems.length === 0) {
       extractedItems = [{
         purchaseId,
-        name: 'Item não reconhecido (Clique no lápis para editar)',
+        name: 'Nenhum item reconhecido (Clique no lápis para adicionar)',
         quantity: 1,
         unitPrice: 0,
         totalPrice: 0
