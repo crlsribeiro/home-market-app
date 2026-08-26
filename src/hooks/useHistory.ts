@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { collection, query, where, onSnapshot, addDoc, updateDoc, doc, getDocs, getDoc } from 'firebase/firestore';
+import { collection, query, where, onSnapshot, addDoc, updateDoc, doc, getDocs, getDoc, deleteDoc } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { db, storage } from '../lib/firebase';
 import { Purchase, PurchaseItem } from '../types';
@@ -55,18 +55,13 @@ export function useHistory(householdId: string | null) {
     const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 0);
     const items: Omit<PurchaseItem, 'id'>[] = [];
 
-    // Regex adaptado para cupons do H-E-B e supermercados nos EUA:
-    // Aceita o formato: [num_item opcional] + [nome do produto] + [preço ex: 3.98] + [flags de tax opcionais ex: F, TF, FW, T, HQ, Q]
     const hebItemRegex = /^(?:\d+\s+)?(.+?)\s+(\d+\.\d{2})(?:\s+[A-Z]{1,2})?$/i;
     const strictStopWords = ['subtotal', 'total sale', 'tax', 'visa', 'mastercard', 'cash', 'change', 'items purchased', 'account #'];
 
     for (const line of lines) {
       const lower = line.toLowerCase();
 
-      // Para apenas nas linhas de subtotal/total final
       if (strictStopWords.some(w => lower.includes(w))) break;
-
-      // Ignora linhas intermediárias de peso/quantidade (ex: "0.68 Lbs @ 0.97 FW")
       if (lower.includes('lbs @') || lower.includes('ea. @')) continue;
 
       const match = line.match(hebItemRegex);
@@ -77,7 +72,6 @@ export function useHistory(householdId: string | null) {
 
       if (!name || isNaN(price) || price <= 0 || price > 500) continue;
 
-      // Remove números residuais no início do nome se houver
       name = name.replace(/^\d+\s+/, '').trim();
 
       if (name.length < 2) continue;
@@ -104,7 +98,6 @@ export function useHistory(householdId: string | null) {
 
     let extractedItems = parseReceiptText(text);
 
-    // Só adiciona o aviso se ABSOLUTAMENTE NENHUM item for lido
     if (extractedItems.length === 0) {
       extractedItems = [{
         purchaseId,
@@ -113,6 +106,12 @@ export function useHistory(householdId: string | null) {
         unitPrice: 0,
         totalPrice: 0
       }];
+    }
+
+    // Limpa os itens antigos dessa compra antes de salvar os novos
+    const oldDocs = await getDocs(query(collection(db, 'purchaseItems'), where('purchaseId', '==', purchaseId)));
+    for (const d of oldDocs.docs) {
+      await deleteDoc(doc(db, 'purchaseItems', d.id));
     }
 
     const itemsWithId = extractedItems.map(i => ({ ...i, purchaseId }));

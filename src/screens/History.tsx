@@ -84,7 +84,7 @@ export function History({ purchases, purchaseItems, onFetchItems, onUploadReceip
                         <p className="text-sm text-[#6B6B6B]">Nenhuma compra registrada ainda</p>
                     </div>
                 ) : (
-                    purchases.map((p, i) => {
+                    purchases.map((p) => {
                         const open = expandedId === p.id;
                         const its = purchaseItems[p.id] || [];
 
@@ -114,43 +114,41 @@ export function History({ purchases, purchaseItems, onFetchItems, onUploadReceip
 
                                 {open && (
                                     <div className="border-t border-[#EBEBEB] fade-in">
-                                        {/* Botão para upload/reenvio de receipt */}
-                                        {i === 0 && (
-                                            <div className="p-4 border-b border-[#EBEBEB]">
-                                                {uploadingId === p.id ? (
-                                                    <div className="flex items-center gap-3 py-2">
-                                                        <Loader2 size={16} className="animate-spin text-[#2D7A4F]" />
-                                                        <p className="text-sm text-[#6B6B6B]">Processando receipt...</p>
-                                                    </div>
-                                                ) : (
-                                                    <label className="flex items-center gap-2 py-2.5 px-4 rounded-xl border border-[#2D7A4F]/30 bg-[#E8F5EE] cursor-pointer w-full justify-center">
-                                                        <Upload size={14} style={{ color: '#2D7A4F' }} />
-                                                        <span className="text-sm font-semibold" style={{ color: '#2D7A4F' }}>
-                              {p.receiptProcessed ? 'Reenviar receipt / foto limpa' : 'Adicionar receipt'}
-                            </span>
-                                                        <input
-                                                            type="file"
-                                                            accept="image/*,.pdf"
-                                                            className="hidden"
-                                                            onChange={async e => {
-                                                                const f = e.target.files?.[0];
-                                                                if (!f) return;
-                                                                setUploadingId(p.id);
-                                                                try {
-                                                                    await onUploadReceipt(p.id, f);
-                                                                    addToast('Receipt processado!');
-                                                                    await onFetchItems(p.id);
-                                                                } catch {
-                                                                    addToast('Erro ao processar receipt', 'error');
-                                                                } finally {
-                                                                    setUploadingId(null);
-                                                                }
-                                                            }}
-                                                        />
-                                                    </label>
-                                                )}
-                                            </div>
-                                        )}
+                                        {/* Botão para upload/reenvio de receipt - Sempre visível quando expandido */}
+                                        <div className="p-4 border-b border-[#EBEBEB]">
+                                            {uploadingId === p.id ? (
+                                                <div className="flex items-center gap-3 py-2">
+                                                    <Loader2 size={16} className="animate-spin text-[#2D7A4F]" />
+                                                    <p className="text-sm text-[#6B6B6B]">Processando receipt...</p>
+                                                </div>
+                                            ) : (
+                                                <label className="flex items-center gap-2 py-2.5 px-4 rounded-xl border border-[#2D7A4F]/30 bg-[#E8F5EE] cursor-pointer w-full justify-center">
+                                                    <Upload size={14} style={{ color: '#2D7A4F' }} />
+                                                    <span className="text-sm font-semibold" style={{ color: '#2D7A4F' }}>
+                            {p.receiptProcessed ? 'Reenviar receipt / foto limpa' : 'Adicionar receipt'}
+                          </span>
+                                                    <input
+                                                        type="file"
+                                                        accept="image/*,.pdf"
+                                                        className="hidden"
+                                                        onChange={async e => {
+                                                            const f = e.target.files?.[0];
+                                                            if (!f) return;
+                                                            setUploadingId(p.id);
+                                                            try {
+                                                                await onUploadReceipt(p.id, f);
+                                                                addToast('Receipt processado!');
+                                                                await onFetchItems(p.id);
+                                                            } catch {
+                                                                addToast('Erro ao processar receipt', 'error');
+                                                            } finally {
+                                                                setUploadingId(null);
+                                                            }
+                                                        }}
+                                                    />
+                                                </label>
+                                            )}
+                                        </div>
 
                                         {/* Lista de Itens */}
                                         {its.length > 0 ? (
