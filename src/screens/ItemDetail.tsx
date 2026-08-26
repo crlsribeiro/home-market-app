@@ -45,13 +45,13 @@ export function ItemDetail({ item, list, unitPrice, isAdmin, onBack, onRemove, o
           {/* Card principal */}
           <div className="bg-white rounded-2xl border border-[#EBEBEB] overflow-hidden">
 
-            {/* Foto ajustada sem cortes */}
-            <div className="w-full max-h-72 min-h-48 bg-gray-50 flex items-center justify-center border-b border-[#EBEBEB]">
+            {/* Foto inteira sem cortes */}
+            <div className="w-full bg-[#FAFAFA] flex items-center justify-center p-4 border-b border-[#EBEBEB]">
               {item.photoURL ? (
                   <img
                       src={item.photoURL}
                       alt={item.name}
-                      className="w-full h-auto max-h-72 object-contain"
+                      className="w-full h-auto max-h-80 object-contain block mx-auto rounded-lg"
                   />
               ) : (
                   <div className="w-full h-48 flex flex-col items-center justify-center" style={{ backgroundColor: '#F0F7F3' }}>
@@ -169,7 +169,7 @@ export function ItemDetail({ item, list, unitPrice, isAdmin, onBack, onRemove, o
             </div>
           </div>
 
-          {/* Só remover — marcar como comprado acontece no modo mercado */}
+          {/* Remover da lista */}
           {list.status !== 'closed' && (
               <button
                   onClick={async () => { if (!confirming) { setConfirming(true); return; } await onRemove(); }}
