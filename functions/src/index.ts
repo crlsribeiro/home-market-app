@@ -58,16 +58,15 @@ export const onItemNotFound = onDocumentUpdated(
 
 // Helper — busca tokens de todos membros exceto um
 async function getTokensExcept(householdId: string, excludeUid: string): Promise<string[]> {
-  const membersSnap = await admin.firestore()
-    .collection("householdMembers")
-    .where("householdId", "==", householdId)
-    .get();
+  // householdMembers ficou órfã quando o app passou a guardar os membros em
+  // households/{id}.memberUids — por isso essa query nunca retornava nada.
+  const householdDoc = await admin.firestore().collection("households").doc(householdId).get();
+  const memberUids: string[] = householdDoc.data()?.memberUids ?? [];
 
   const tokens: string[] = [];
-  for (const memberDoc of membersSnap.docs) {
-    const memberData = memberDoc.data();
-    if (memberData.userId === excludeUid) continue;
-    const userDoc = await admin.firestore().collection("users").doc(memberData.userId).get();
+  for (const uid of memberUids) {
+    if (uid === excludeUid) continue;
+    const userDoc = await admin.firestore().collection("users").doc(uid).get();
     const fcmToken = userDoc.data()?.fcmToken;
     if (fcmToken) tokens.push(fcmToken);
   }
