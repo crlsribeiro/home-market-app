@@ -10,19 +10,44 @@ export const onItemAdded = onDocumentCreated(
   "items/{itemId}",  // ✅ corrigido: era listItems
   async (event) => {
     const snap = event.data;
-    if (!snap) return;
+    if (!snap) {
+      console.log("onItemAdded: no snapshot data, skipping");
+      return;
+    }
     const item = snap.data();
-    if (!item) return;
+    if (!item) {
+      console.log("onItemAdded: empty item data, skipping");
+      return;
+    }
+
+    console.log("onItemAdded: triggered", {
+      itemId: event.params.itemId,
+      householdId: item.householdId,
+      addedByUid: item.addedByUid,
+      name: item.name,
+    });
 
     const tokens = await getTokensExcept(item.householdId, item.addedByUid);
-    if (tokens.length === 0) return;
+    if (tokens.length === 0) {
+      console.log("onItemAdded: no recipient tokens found, not sending", {
+        householdId: item.householdId,
+      });
+      return;
+    }
 
-    await admin.messaging().sendEachForMulticast({
+    const response = await admin.messaging().sendEachForMulticast({
       notification: {
         title: "🛒 Novo item na lista!",
         body: `${item.addedByName || "Alguém"} adicionou "${item.name || "um item"}" na lista`,
       },
       tokens,
+    });
+    console.log("onItemAdded: sendEachForMulticast result", {
+      successCount: response.successCount,
+      failureCount: response.failureCount,
+      errors: response.responses
+        .map((r, i) => (r.success ? null : { token: tokens[i], error: r.error?.message }))
+        .filter(Boolean),
     });
   }
 );
@@ -61,13 +86,19 @@ async function getTokensExcept(householdId: string, excludeUid: string): Promise
   // householdMembers ficou órfã quando o app passou a guardar os membros em
   // households/{id}.memberUids — por isso essa query nunca retornava nada.
   const householdDoc = await admin.firestore().collection("households").doc(householdId).get();
+  if (!householdDoc.exists) {
+    console.log("getTokensExcept: household not found", { householdId });
+    return [];
+  }
   const memberUids: string[] = householdDoc.data()?.memberUids ?? [];
+  console.log("getTokensExcept: household members", { householdId, memberUids, excludeUid });
 
   const tokens: string[] = [];
   for (const uid of memberUids) {
     if (uid === excludeUid) continue;
     const userDoc = await admin.firestore().collection("users").doc(uid).get();
     const fcmToken = userDoc.data()?.fcmToken;
+    console.log("getTokensExcept: member token lookup", { uid, hasToken: !!fcmToken });
     if (fcmToken) tokens.push(fcmToken);
   }
   return tokens;
